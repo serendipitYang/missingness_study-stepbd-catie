@@ -1,4 +1,4 @@
-This is the analysis toolkit for evaluating missingness patterns and risk factors in longitudinal psychiatric studies, StepBD and CATIE , with focus on clinical severity, smoking status, and BMI as predictors of participant dropout.
+This is the analysis toolkit for evaluating missingness patterns and risk factors in longitudinal psychiatric studies, STEP-BD and CATIE , with focus on clinical severity, smoking status, and BMI as predictors of participant dropout.
 
 # Longitudinal Study Data Analysis Pipeline
 This repository contains the data processing and analysis pipeline for the paper "Associations of missing visits with symptom severity, smoking, and BMI in longitudinal studies of severe mental illness".
@@ -7,7 +7,7 @@ This repository contains the data processing and analysis pipeline for the paper
 
 The pipeline processes and analyzes data from two major studies:
 1. **CATIE** (Clinical Antipsychotic Trials of Intervention Effectiveness) - a randomized effectiveness trial in people with schizophrenia ([CATIE](https://www.nimh.nih.gov/funding/clinical-research/practical/catie#:~:text=The%20NIMH%2Dfunded%20Clinical%20Antipsychotic,medications%20used%20to%20treat%20schizophrenia.)) [[1]](#reference-1);
-2. **StepBD** (Systematic Treatment Enhancement Program for Bipolar Disorder) - an observational study in people with bipolar disorder ([Step-BD](https://www.nimh.nih.gov/funding/clinical-research/practical/step-bd))[[2]](#reference-2).
+2. **STEP-BD** (Systematic Treatment Enhancement Program for Bipolar Disorder) - an observational study in people with bipolar disorder ([Step-BD](https://www.nimh.nih.gov/funding/clinical-research/practical/step-bd))[[2]](#reference-2).
 
 The analysis investigates whether missing visits in these studies are associated with clinical illness severity, smoking status, or BMI.
 
@@ -20,10 +20,10 @@ The analysis investigates whether missing visits in these studies are associated
   - `catie_smoking_processing.py`: Processes smoking-related data from CATIE
   - `catie_bmi_processing.py`: Processes BMI-related data from CATIE
 
-- **StepBD Processing**
-  - `stepbd_processing_utils.py`: Utility functions for StepBD data processing
-  - `stepbd_smoking_processing.py`: Processes smoking-related data from StepBD
-  - `stepbd_bmi_processing.py`: Processes BMI-related data from StepBD
+- **STEP-BD Processing**
+  - `stepbd_processing_utils.py`: Utility functions for STEP-BD data processing
+  - `stepbd_smoking_processing.py`: Processes smoking-related data from STEP-BD
+  - `stepbd_bmi_processing.py`: Processes BMI-related data from STEP-BD
 
 ### Analysis Scripts
 
@@ -42,7 +42,7 @@ The analysis investigates whether missing visits in these studies are associated
 ### 2. Clinical Status Determination
 - Calculate clinical status based on study-specific measures
   - PANSS and Calgary scores for CATIE
-  - MADRS and YMRS for StepBD
+  - MADRS and YMRS for STEP-BD
 - Apply LOCF (Last Observation Carried Forward) imputation for missing values
 
 ### 3. Participant Categorization
@@ -92,7 +92,7 @@ The analysis investigates whether missing visits in these studies are associated
    python catie_smoking_processing.py
    python catie_bmi_processing.py
    
-   # Process StepBD data
+   # Process STEP-BD data
    python stepbd_smoking_processing.py
    python stepbd_bmi_processing.py
    ```
