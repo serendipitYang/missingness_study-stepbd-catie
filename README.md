@@ -6,8 +6,8 @@ This repository contains the data processing and analysis pipeline for the paper
 ## Overview
 
 The pipeline processes and analyzes data from two major studies:
-1. **CATIE** (Clinical Antipsychotic Trials of Intervention Effectiveness) - a randomized effectiveness trial in people with schizophrenia [1]
-2. **StepBD** (Systematic Treatment Enhancement Program for Bipolar Disorder) - an observational study in people with bipolar disorder [2]
+1. **CATIE** (Clinical Antipsychotic Trials of Intervention Effectiveness) - a randomized effectiveness trial in people with schizophrenia ([CATIE](https://www.nimh.nih.gov/funding/clinical-research/practical/catie#:~:text=The%20NIMH%2Dfunded%20Clinical%20Antipsychotic,medications%20used%20to%20treat%20schizophrenia.)) [\[1\]](README.md##References[1]);
+2. **StepBD** (Systematic Treatment Enhancement Program for Bipolar Disorder) - an observational study in people with bipolar disorder ([Step-BD](https://www.nimh.nih.gov/funding/clinical-research/practical/step-bd))[\[2\]](README.md##References[2]);
 
 The analysis investigates whether missing visits in these studies are associated with clinical illness severity, smoking status, or BMI.
 
@@ -134,7 +134,7 @@ The analysis investigates whether missing visits in these studies are associated
 
 ## References
 
-[1] Lieberman JA, Stroup TS, McEvoy JP, et al. Effectiveness of antipsychotic drugs in patients with chronic schizophrenia. N Engl J Med. 2005;353(12):1209-1223. doi:10.1056/NEJMoa051688
+[1] Stroup TS, McEvoy JP, Swartz MS, Byerly MJ, Glick ID, Canive JM, et al. The National Institute of Mental Health Clinical Antipsychotic Trials of Intervention Effectiveness (CATIE) project: schizophrenia trial design and protocol development. Schizophr Bull. 2003;29: 15–31.
 
 [2] Sachs GS, Thase ME, Otto MW, et al. Rationale, design, and methods of the systematic treatment enhancement program for bipolar disorder (STEP-BD). Biol Psychiatry. 2003;53(11):1028-1042. doi:10.1016/s0006-3223(03)00165-3
 T
