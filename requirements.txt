@@ -1,0 +1,18 @@
+# Python 3.8+ required
+
+# Data processing
+pandas>=1.3.0
+numpy>=1.20.0
+tqdm>=4.62.0
+
+# Visualization
+matplotlib>=3.4.0
+seaborn>=0.11.2
+
+# Statistical analysis
+lifelines>=0.26.0
+statsmodels>=0.13.0
+
+# Utilities
+scipy>=1.7.0
+scikit-learn>=1.0.0
