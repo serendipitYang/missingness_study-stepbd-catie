@@ -6,8 +6,8 @@ This repository contains the data processing and analysis pipeline for the paper
 ## Overview
 
 The pipeline processes and analyzes data from two major studies:
-1. **CATIE** (Clinical Antipsychotic Trials of Intervention Effectiveness) - a randomized effectiveness trial in people with schizophrenia
-2. **StepBD** (Systematic Treatment Enhancement Program for Bipolar Disorder) - an observational study in people with bipolar disorder
+1. **CATIE** (Clinical Antipsychotic Trials of Intervention Effectiveness) - a randomized effectiveness trial in people with schizophrenia [1]
+2. **StepBD** (Systematic Treatment Enhancement Program for Bipolar Disorder) - an observational study in people with bipolar disorder [2]
 
 The analysis investigates whether missing visits in these studies are associated with clinical illness severity, smoking status, or BMI.
 
@@ -132,4 +132,9 @@ The analysis investigates whether missing visits in these studies are associated
 - Kaplan-Meier curves saved as PNG files
 - Statistical model results with adjusted p-values
 
+## References
 
+[1] Lieberman JA, Stroup TS, McEvoy JP, et al. Effectiveness of antipsychotic drugs in patients with chronic schizophrenia. N Engl J Med. 2005;353(12):1209-1223. doi:10.1056/NEJMoa051688
+
+[2] Sachs GS, Thase ME, Otto MW, et al. Rationale, design, and methods of the systematic treatment enhancement program for bipolar disorder (STEP-BD). Biol Psychiatry. 2003;53(11):1028-1042. doi:10.1016/s0006-3223(03)00165-3
+T
