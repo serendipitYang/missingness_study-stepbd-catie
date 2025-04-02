@@ -118,8 +118,12 @@ The analysis investigates whether missing visits in these studies are associated
 
 ### Analysis
 - `prepare_data_for_visualization()`: Prepare datasets for KM visualization
-- `plot_km_*_curves()`: Generate various Kaplan-Meier curves
-- `run_*_pairwise_comparisons()`: Run Cox models for different comparison groups
+- `plot_km_smoking_curves()`: Generate Kaplan-Meier curves for smoking status
+- `plot_km_smoking_clinstat_curves()`: Generate KM curves for smoking status stratified by clinical status
+- `plot_km_bmi_curves()`: Generate Kaplan-Meier curves for BMI categories
+- `plot_km_bmi_clinstat_curves()`: Generate KM curves for BMI categories stratified by clinical status
+- `run_smoking_pairwise_comparisons()`: Run Cox models comparing smoking-related groups
+- `run_bmi_pairwise_comparisons()`: Run Cox models comparing BMI-related groups
 - `adjust_pvalues()`: Apply multiple testing corrections
 
 ## Output
