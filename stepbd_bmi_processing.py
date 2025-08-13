@@ -149,28 +149,33 @@ def preprocess_stepbd_bmi_data(input_file, baseline_file, output_dir, madrs_file
     
     # Compute scheduled visits
     df_bmi_5 = compute_schedule_visit(df_bmi_4)
-
+    
     # Map clinical status into 3 classes
     df_bmi_5['clinstat'] = df_bmi_5['clinstat'].astype('int')
     df_bmi_5['clinstat_1'] = df_bmi_5['clinstat'].apply(map_clinstat)
+    print(df_bmi_5.shape, Counter(df_bmi_5['schedule_visit']))
+    # print(df_bmi_5.head(20))
     
     # Prepare final dataset for survival analysis
     df_new = pd.DataFrame([], columns=list(df_bmi_5.columns)+['event_occurs'])
     for idx, subject in enumerate(tqdm(list(set(df_bmi_5['subjectkey'])))):
         subject_df = df_bmi_5[df_bmi_5['subjectkey'] == subject]
         subject_df['event_occurs'] = get_event(list(subject_df['is_scheduled']))
-        
-        # Keep only the first event occurrence row
+        visit_list = get_visit_id(list(subject_df['visit']))
+        subject_df['visit_id'] = visit_list
+        subject_df['event_occurs'] = get_event_by_visit(visit_list)
         if 1 in subject_df['event_occurs']:
-            subject_df1 = pd.concat([
-                subject_df[subject_df['event_occurs'] == 0],
-                subject_df[subject_df['event_occurs'] == 1].head(1)
-            ], axis=0)
+            subject_df1 = pd.concat([subject_df[subject_df['event_occurs'] == 0],
+                                    subject_df[subject_df['event_occurs'] == 1].head(1)], axis = 0)
         else:
             subject_df1 = subject_df
-        
-        df_new = pd.concat([df_new, subject_df1], axis=0)
+        df_new = pd.concat([df_new, subject_df1],axis=0)
     logger.info("Event assignment complete: resulting rows = %d", df_new.shape[0])
+    # print(Counter(df_new['bmi_status']))
+
+    # Filter out negative days, i.e. early dropouts
+    df_new = df_new[df_new['daysrz']>=0].reset_index()
+    del df_new['index']
 
     # Ensure only the first event occurrence is kept per subject
     logger.info("Filtering for first event occurrence per subject...")
@@ -183,7 +188,7 @@ def preprocess_stepbd_bmi_data(input_file, baseline_file, output_dir, madrs_file
     out_path = os.path.join(output_dir, 'stepBD_bmi_final_event_occurrence.csv')
     df_final.to_csv(out_path, index=False)
     logger.info("Final entries saved to %s (%d rows)", out_path, df_final.shape[0])
-    return out_path, df_final
+    return out_path, df_new
 
 
 def process_stepbd_bmi_data(input_file, baseline_file, output_dir, madrs_file, ymrs_file):
