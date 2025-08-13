@@ -50,8 +50,8 @@ The analysis investigates whether missing visits in these studies are associated
 
 ```bash
 # Clone the repository
-git clone [repository-url]
-cd longitudinal-study-analysis
+git clone https://github.com/serendipitYang/missingness_study-stepbd-catie.git
+cd missingness_study-stepbd-catie
 ```
 
 # Install required packages
