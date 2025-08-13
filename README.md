@@ -52,9 +52,12 @@ The analysis investigates whether missing visits in these studies are associated
 # Clone the repository
 git clone [repository-url]
 cd longitudinal-study-analysis
+```
 
 # Install required packages
+```bash
 pip install pandas numpy matplotlib lifelines tqdm statsmodels xlsxwriter
+```
 
 ## Usage
 
@@ -62,7 +65,7 @@ pip install pandas numpy matplotlib lifelines tqdm statsmodels xlsxwriter
 
 Ensure your data files are organized as follows:
 
-
+```
 data/
 ├── CATIE/
 │   ├── VISIT.csv
@@ -75,13 +78,14 @@ data/
     ├── ade01.txt
     ├── madrs01.txt
     └── ymrs01.txt
-
+```
 
 ### 2. Data Processing
 
 Process each dataset individually:
 
 # CATIE BMI processing
+```python
 from catie_bmi_processing import process_catie_bmi_data
 process_catie_bmi_data(
     input_file='data/CATIE/VISIT.csv',
@@ -90,8 +94,9 @@ process_catie_bmi_data(
     panss_file='data/CATIE/panss01.txt',
     clgry_file='data/CATIE/clgry01.txt'
 )
-
+```
 # STEP-BD smoking processing  
+```python
 from stepbd_smoking_processing import process_smoking_data
 process_smoking_data(
     input_file='data/STEP-BD/step_bd_final_data.csv',
