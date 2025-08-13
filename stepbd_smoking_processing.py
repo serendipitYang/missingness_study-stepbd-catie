@@ -1,81 +1,92 @@
 import os
+import logging
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from collections import Counter
+import warnings
 
-from stepbd_processing_utils import (
+# Import utility functions from local utils.py
+from utils import (
     locf_imputation, 
     select_least_nan_row, 
     map_clinstat, 
     get_event, 
     get_visit_id, 
     get_event_by_visit,
-    compute_schedule_visit
+    compute_schedule_visit,
 )
 
-def preprocess_smoking_data(input_file, output_dir):
+# ------------------------------------------------------------------------------
+# Configure logger and disable warnings
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
+
+warnings.filterwarnings('ignore')
+# ------------------------------------------------------------------------------
+
+def preprocess_smoking_data(input_file, baseline_file, output_dir, madrs_file=None, ymrs_file=None):
     """
     Preprocess StepBD smoking data.
     
     Parameters:
-    input_file (str): Path to the input CSV file.
-    output_dir (str): Directory to save processed data.
+        input_file (str): Path to the input visit CSV file, ie. entry table.
+        baseline_file(str): Path to the input baseline CSV file, ie. ade file.
+        output_dir (str): Directory to save processed data.
+        madrs_file (str): Path to MADRS text file.
+        ymrs_file (str): Path to YMRS text file.
     
     Returns:
-    DataFrame: Processed smoking data.
+        DataFrame: Processed smoking data.
     """
     # Read the raw data
     df_all = pd.read_csv(input_file)
+    df_ade = pd.read_csv(baseline_file, header=1, delimiter=r"\s+") # ade file
     
+    # Label smokers. non_smokers, and missing_baseliner based on baseline visit
+    smokers = set(df_ade[df_ade['nicotine packs per day']>0]['The NDAR Global Unique Identifier (GUID) for research subject'])
+    non_smokers = set(df_ade[df_ade['nicotine packs per day']==0]['The NDAR Global Unique Identifier (GUID) for research subject'])
+    missing_baseliner = set(df_ade[df_ade['nicotine packs per day'].isna()]['The NDAR Global Unique Identifier (GUID) for research subject'])
+    # print(f"Number of \nsmokers: {len(smokers)};\nnon-smokers: {len(non_smokers)};\nmissing-baseliners: {len(missing_baseliner)}")
+    logger.info(
+        "Baseline classification: %d smokers, %d non-smokers, %d missing",
+        len(smokers), len(non_smokers), len(missing_baseliner)
+    )
+
     # Select relevant columns for smoking analysis
     df_smkornot = df_all[['subjectkey', 'src_subject_id', 'interview_age', 'daysrz', 
                           'smoker_yn', 'ppd', 'madrstot', 'ymrstot', 'visit', 'clinstat']]
-    
+    # Filter out subjects not in the baseline file
+    logger.info("Filtering subjects based on baseline data...")
+    df_smkornot = df_smkornot[df_smkornot['subjectkey'].isin(set(df_ade['The NDAR Global Unique Identifier (GUID) for research subject']))]
+
     # Impute clinical status
+    logger.info("Imputing clinical status...")
     columns_to_impute = ['clinstat']
     df_smkornot_imputed = locf_imputation(df_smkornot, columns_to_impute)
     df_smkornot_1 = df_smkornot_imputed.dropna(subset=['clinstat'])
     
-    # Impute smoking status
-    columns_to_impute = ['smoker_yn']
-    df_smkornot_1_imputed = locf_imputation(df_smkornot_1, columns_to_impute)
-    df_smkornot_2 = df_smkornot_1_imputed.dropna(subset=['smoker_yn'])
-    df_smkornot_2['smoker_yn'] = df_smkornot_2['smoker_yn'].astype('int')
-    
-    # Categorize smoking status
-    smokers, non_smokers, changers = [], [], []
-    for k in tqdm(list(set(df_smkornot_2['subjectkey']))):
-        smkstatus = list(df_smkornot_2[df_smkornot_2['subjectkey']==k]['smoker_yn'])
-        all_smk_status = [int(s) for s in list(set(smkstatus))]
-        
-        if len(set(all_smk_status)) != 1:
-            changers.append(k)
-            continue
-        
-        if all_smk_status[0] == 0:
-            non_smokers.append(k)
-        elif all_smk_status[0] == 1:
-            smokers.append(k)
-    
-    # Add smoking status labels
-    smoking_status = [''] * len(df_smkornot_2)
-    for idx, sk in enumerate(df_smkornot_2['subjectkey']):
+    # Smoking status settled down, no need to impute
+    # Label smoking status in the entry table
+    df_smkornot_2 = df_smkornot_1.copy()
+    smoking_status = ['' for _ in range(len(df_smkornot_2))]
+    for idx,sk in enumerate(df_smkornot_2['subjectkey']):
         if sk in smokers:
             smoking_status[idx] = 'smoker'
-        if sk in non_smokers:
+        elif sk in non_smokers:
             smoking_status[idx] = 'non-smoker'
-        if sk in changers:
-            smoking_status[idx] = 'changer'
-    df_smkornot_2['smoker_yn_1'] = smoking_status
+        else:
+            smoking_status[idx] = 'missing_baseliner'
+        df_smkornot_2['smoker_yn_1'] = smoking_status
     
     # Load MADRS and YMRS data
-    df_madrs = pd.read_csv(os.path.join(os.path.dirname(input_file), 
-                                        'STEP-BD data/Text files from NDA/madrs01.txt'), 
-                           header=1, delimiter=r"\s+")
-    df_ymrs = pd.read_csv(os.path.join(os.path.dirname(input_file), 
-                                       'STEP-BD data/Text files from NDA/ymrs01.txt'), 
-                          header=1, delimiter=r"\s+")
+    logger.info("Loading MADRS and YMRS files")
+    df_madrs = pd.read_csv(madrs_file, header=1, delimiter=r"\s+")
+    df_ymrs = pd.read_csv(ymrs_file, header=1, delimiter=r"\s+")
     
     # Rename columns
     rename_dict = {
@@ -107,12 +118,22 @@ def preprocess_smoking_data(input_file, output_dir):
     df_smkornot_5 = grouped.apply(select_least_nan_row).reset_index(drop=True)
     df_smkornot_5 = df_smkornot_5.sort_values(by=['subjectkey', 'daysrz'], ascending=True)
     
+    logger.info(
+        "After deduplication: %d rows across %d subjects",
+        df_smkornot_5.shape[0], df_smkornot_5['subjectkey'].nunique()
+    )
+
     # Label scheduled visits
-    is_scheduled = [0] * len(df_smkornot_5)
+    logger.info("Labeling scheduled visits, based on the validness of MADRS/YMRS record...")
+    is_scheduled = [0 for _ in range(len(df_smkornot_5))]
     for idx, ism in enumerate(tqdm(df_smkornot_5['is_madrs'])):
         if not (np.isnan(ism) and np.isnan(df_smkornot_5['is_ymrs'][idx])):
             is_scheduled[idx] = 1
     df_smkornot_5['is_scheduled'] = is_scheduled
+    logger.info(
+        "Scheduled visits labeled: %d scheduled of %d total rows",
+        sum(is_scheduled), len(df_smkornot_5)
+    )
     
     # Map clinical status
     df_smkornot_5['clinstat'] = df_smkornot_5['clinstat'].astype('int')
@@ -122,6 +143,8 @@ def preprocess_smoking_data(input_file, output_dir):
     df_smkornot_6 = compute_schedule_visit(df_smkornot_5)
     
     # Prepare final dataset for survival analysis
+    subjects = list(set(df_smkornot_6['subjectkey']))
+    logger.info("Computing event occurrences for %d subjects...", len(subjects))
     df_new = pd.DataFrame([], columns=list(df_smkornot_6.columns)+['event_occurs'])
     for idx, subject in enumerate(tqdm(list(set(df_smkornot_6['subjectkey'])))):
         subject_df = df_smkornot_6[df_smkornot_6['subjectkey'] == subject]
@@ -138,15 +161,23 @@ def preprocess_smoking_data(input_file, output_dir):
             ], axis=0)
         else:
             subject_df1 = subject_df
-        
         df_new = pd.concat([df_new, subject_df1], axis=0)
-    
-    # Ensure only positive days are included
-    df_new = df_new[df_new['daysrz'] >= 0].reset_index(drop=True)
-    
-    return df_new
+    logger.info("Event assignment complete: resulting rows = %d", df_new.shape[0])
 
-def process_smoking_data(input_file, output_file):
+    # Ensure only the first event occurrence is kept per subject
+    logger.info("Filtering for first event occurrence per subject...")
+    df_final = pd.DataFrame([], columns=df_new.columns)
+    for idx,s in enumerate(tqdm(list(set(df_new['subjectkey'])))):
+        df_temp = df_new[df_new['subjectkey']==s]
+        first_one_index = df_temp.drop(df_temp[df_temp['event_occurs'].eq(1)].index[1:])
+        df_final = pd.concat([df_final,first_one_index],axis=0)
+    # Final event occurrence file in need to for plotting and Cox regression
+    out_path = os.path.join(output_dir, 'stepBD_smoking_final_event_occurrence.csv')
+    df_final.to_csv(out_path, index=False)
+    logger.info("Final entries saved to %s (%d rows)", out_path, df_final.shape[0])
+    return out_path, df_final
+
+def process_smoking_data(input_file, baseline_file, output_dir, madrs_file=None, ymrs_file=None):
     """
     Process and save smoking data for survival analysis.
     
@@ -155,11 +186,10 @@ def process_smoking_data(input_file, output_file):
     output_file (str): Path to save the processed data.
     """
     # Process the data
-    df_processed = preprocess_smoking_data(input_file, output_dir=os.path.dirname(output_file))
+    out_path, df_processed = preprocess_smoking_data(input_file, baseline_file, output_dir, madrs_file, ymrs_file)
     
-    # Save the processed data
-    df_processed.to_csv(output_file, index=False)
-    print(f"Processed smoking data saved to {output_file}")
+    # Processed data saved, report now
+    print(f"Processed smoking data saved to {out_path}")
     
     # Print basic statistics
     print("\nData Processing Statistics:")
@@ -172,13 +202,17 @@ def process_smoking_data(input_file, output_file):
 def main():
     """
     Main function to run the smoking data processing.
+    Configure your paths for input and output files here.
     """
     # Paths - replace these with your actual paths
     input_file = '../STEP_BD_pipelined/step_bd_final_data_debugged_dedupe_new_vars_med_bin_derived_complete.csv'
-    output_file = '../data4survivals/stepBD_2missing_smoking_w_impute.csv'
+    baseline_file = '../STEP_BD_pipelined/ade01.txt'
+    output_dir = '../data4survivals_1/'
+    madrs_file  = '../STEP-BD data/Text files from NDA/madrs01.txt'
+    ymrs_file  = '../STEP-BD data/Text files from NDA/ymrs01.txt'
     
     # Process the data
-    process_smoking_data(input_file, output_file)
+    process_smoking_data(input_file, baseline_file, output_dir, madrs_file, ymrs_file)
 
 if __name__ == "__main__":
     main()

@@ -1,119 +1,115 @@
 import os
+import logging, warnings
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from collections import Counter
 
-from stepbd_processing_utils import (
+# Import utility functions from local utils.py
+from utils import (
+    bmi2cate,
     locf_imputation, 
     select_least_nan_row, 
     map_clinstat, 
     get_event, 
     get_visit_id, 
     get_event_by_visit,
-    compute_schedule_visit
+    compute_schedule_visit,
 )
 
-def count_bmi_category_changes(df, column='obese'):
-    """
-    Count the changes in BMI categories for individuals.
-    
-    Parameters:
-    df (DataFrame): Input DataFrame.
-    column (str, optional): Column to analyze changes. Defaults to 'obese'.
-    
-    Returns:
-    tuple: Counts of changes from 0 to 1 and 1 to 0.
-    """
-    def count_changes(value_list):
-        """
-        Counts the changes from 0 to 1 and from 1 to 0 in a list.
-        """
-        changes_0_to_1 = 0
-        changes_1_to_0 = 0
+# ------------------------------------------------------------------------------
+# Configure logger and disable warnings
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
 
-        # Iterate through the list, except the last item to avoid index out of range
-        for i in range(len(value_list) - 1):
-            # Check for change from 0 to 1
-            if value_list[i] == 0 and value_list[i + 1] == 1:
-                changes_0_to_1 += 1
-            # Check for change from 1 to 0
-            elif value_list[i] == 1 and value_list[i + 1] == 0:
-                changes_1_to_0 += 1
+warnings.filterwarnings('ignore')
+# ------------------------------------------------------------------------------
 
-        return changes_0_to_1, changes_1_to_0
-    
-    return count_changes
-
-def preprocess_bmi_data(input_file, output_dir):
+def preprocess_stepbd_bmi_data(input_file, baseline_file, output_dir, madrs_file, ymrs_file):
     """
     Preprocess StepBD BMI data.
     
     Parameters:
     input_file (str): Path to the input CSV file.
     output_dir (str): Directory to save processed data.
-    
+    baseline_file (str): Path to the baseline data file.
+    madrs_file (str): Path to the MADRS data file.
+    ymrs_file (str): Path to the YMRS data file.
+
     Returns:
+    outpath (str): Path, with filename, to the saved processed data.
     DataFrame: Processed BMI data.
     """
     # Read the raw data
     df_all = pd.read_csv(input_file)
+    df_ade = pd.read_csv(baseline_file, header=1, delimiter=r"\s+") # ade file
     
-    # Select relevant columns for BMI analysis
-    df_bmi = df_all[['subjectkey', 'src_subject_id', 'interview_age', 'daysrz', 
-                     'bmi_cat', 'obese', 'height_std', 'weight_std',
-                     'ppd', 'smoker_yn', 'madrstot', 'ymrstot', 'visit', 'clinstat']]
+    # Select relevant columns for BMI analysis, only for subjects present in ADE file
+    df_bmi = df_all[df_all['subjectkey'].isin(list(set(df_ade['The NDAR Global Unique Identifier (GUID) for research subject'])))][['subjectkey','src_subject_id','interview_age', 'daysrz', 'bmi', 'bmi_cat', 'obese', 'height_std', 'weight_std',
+                 'ppd', 'smoker_yn', 'madrstot', 'ymrstot', 'visit', 'clinstat']]
     
-    # Impute BMI category
-    columns_to_impute = ['bmi_cat']
-    df_imputed1 = locf_imputation(df_bmi, columns_to_impute)
-    df_imputed1 = df_imputed1.dropna(subset=['bmi_cat'])
-    df_imputed1['bmi_cat'] = df_imputed1['bmi_cat'].astype('int')
+    # Impute BMI value
+    logger.info("Forward imputing BMI category...")
+    columns_to_impute = ['bmi']
+    df_imputed = locf_imputation(df_bmi, columns_to_impute)
+    df_imputed1 = df_imputed.dropna(subset = ['bmi'])
     
     # Impute clinical status
-    df_imputed2 = locf_imputation(df_imputed1, ['clinstat'])
+    logger.info("Imputing clinical status category...")
+    df_imputed2 = locf_imputation(df_bmi, ['clinstat'])
     df_imputed2['clinstat'] = df_imputed2['clinstat'].astype('int')
     
-    # Categorize BMI groups
-    bmi1, bmi2, bmi3, bmi456, transformer = [], [], [], [], []
-    for k in tqdm(list(set(df_imputed2['subjectkey']))):
-        bmi_cates = list(df_imputed2[df_imputed2['subjectkey']==k]['bmi_cat'])
-        all_bmi_cates = [int(s) for s in list(set(bmi_cates))]
-        
-        if len(set(bmi_cates)) != 1:
-            transformer.append(k)
-            continue
-        
-        if all_bmi_cates[0] == 1:
+    # Categorize BMI groups, just use the baseline visit
+    logger.info("Categorizing BMI groups based on the baseline visit...")
+    df_bmi_1 = df_imputed2.copy()
+    df_bmi_1_baseline = df_imputed1.drop_duplicates(subset = "subjectkey" ,keep='first')
+    df_bmi_1_baseline['bmi_category'] = df_bmi_1_baseline['bmi'].apply(bmi2cate)
+    print(Counter(df_bmi_1_baseline['bmi_category']))
+
+    bmi1, bmi2, bmi3, bmi456, no_bmi_0 = [], [], [], [], []
+    for k in tqdm(list(set(df_bmi_1_baseline['subjectkey']))):
+        bmi_cates = list(df_bmi_1_baseline[df_bmi_1_baseline['subjectkey']==k]['bmi_category'])
+        all_bmi_cates = [s for s in list(set(bmi_cates))]
+        if all_bmi_cates[0]=="Underweight":
             bmi1.append(k)
-        elif all_bmi_cates[0] == 2:
+        elif all_bmi_cates[0]=="Normal weight":
             bmi2.append(k)
-        elif all_bmi_cates[0] == 3:
+        elif all_bmi_cates[0]=="Overweight":
             bmi3.append(k)
-        elif all_bmi_cates[0] >= 4:
+        elif all_bmi_cates[0]=="Obese":
             bmi456.append(k)
-    
-    # Add BMI status labels
-    bmi_status = [''] * len(df_imputed2)
-    for idx, bmi in enumerate(df_imputed2['subjectkey']):
+        elif all_bmi_cates[0]==-999:
+            no_bmi_0.append(k)
+        else:
+            print(k) # should not happen
+    no_bmi = list(set(df_bmi['subjectkey'])-set(bmi1)-set(bmi2)-set(bmi3)-set(bmi456))
+    logger.info(
+        "Baseline classification: %d underweight, %d normal, %d overweight, %d obese, %d bmi (missing bmi records)",
+        len(bmi1), len(bmi2), len(bmi3), len(bmi456), len(no_bmi)
+    )
+    # Add BMI status labels to the main DataFrame
+    bmi_status = [''] * len(df_bmi_1)
+    for idx,bmi in enumerate(df_bmi_1['subjectkey']):
+        if bmi in bmi1:
+            bmi_status[idx] = 'bmi1'
         if bmi in bmi2:
             bmi_status[idx] = 'bmi2'
         if bmi in bmi3:
             bmi_status[idx] = 'bmi3'
         if bmi in bmi456:
             bmi_status[idx] = 'bmi456'
-        if bmi in transformer:
-            bmi_status[idx] = 'transformer'
-    df_imputed2['bmi_status'] = bmi_status
+        if bmi in no_bmi:
+            bmi_status[idx] = 'no_bmi'
+    df_bmi_1['bmi_status'] = bmi_status
     
     # Load MADRS and YMRS data
-    df_madrs = pd.read_csv(os.path.join(os.path.dirname(input_file), 
-                                        'STEP-BD data/Text files from NDA/madrs01.txt'), 
-                           header=1, delimiter=r"\s+")
-    df_ymrs = pd.read_csv(os.path.join(os.path.dirname(input_file), 
-                                       'STEP-BD data/Text files from NDA/ymrs01.txt'), 
-                          header=1, delimiter=r"\s+")
-    
+    logger.info("Loading MADRS and YMRS files")
+    df_madrs = pd.read_csv(madrs_file, header=1, delimiter=r"\s+")
+    df_ymrs = pd.read_csv(ymrs_file, header=1, delimiter=r"\s+")
     # Rename columns
     rename_dict = {
         "The NDAR Global Unique Identifier (GUID) for research subject": "subjectkey",
@@ -121,13 +117,12 @@ def preprocess_bmi_data(input_file, output_dir):
     }
     df_madrs = df_madrs.rename(columns=rename_dict)
     df_ymrs = df_ymrs.rename(columns=rename_dict)
-    
     # Add indicator columns
-    df_madrs['is_madrs'] = 1
-    df_ymrs['is_ymrs'] = 1
+    df_madrs['is_madrs'] = [1 for _ in range(len(df_madrs))]
+    df_ymrs['is_ymrs'] = [1 for _ in range(len(df_ymrs))]
     
     # Merge with MADRS and YMRS data
-    df_bmi_2 = df_imputed2.merge(
+    df_bmi_2 = df_bmi_1.merge(
         df_madrs[['subjectkey', 'daysrz', 'is_madrs']], 
         on=['subjectkey', 'daysrz'], 
         how='left'
@@ -145,18 +140,19 @@ def preprocess_bmi_data(input_file, output_dir):
     df_bmi_4 = df_bmi_4.sort_values(by=['subjectkey', 'daysrz'], ascending=True)
     
     # Label scheduled visits
-    is_scheduled = [0] * len(df_bmi_4)
+    logger.info("Labeling scheduled visits, based on the validness of MADRS/YMRS record...")
+    is_scheduled = [0 for _ in range(len(df_bmi_4))]
     for idx, ism in enumerate(tqdm(df_bmi_4['is_madrs'])):
         if not (np.isnan(ism) and np.isnan(df_bmi_4['is_ymrs'][idx])):
             is_scheduled[idx] = 1
     df_bmi_4['is_scheduled'] = is_scheduled
     
-    # Map clinical status
-    df_bmi_4['clinstat'] = df_bmi_4['clinstat'].astype('int')
-    df_bmi_4['clinstat_1'] = df_bmi_4['clinstat'].apply(map_clinstat)
-    
     # Compute scheduled visits
     df_bmi_5 = compute_schedule_visit(df_bmi_4)
+
+    # Map clinical status into 3 classes
+    df_bmi_5['clinstat'] = df_bmi_5['clinstat'].astype('int')
+    df_bmi_5['clinstat_1'] = df_bmi_5['clinstat'].apply(map_clinstat)
     
     # Prepare final dataset for survival analysis
     df_new = pd.DataFrame([], columns=list(df_bmi_5.columns)+['event_occurs'])
@@ -174,13 +170,23 @@ def preprocess_bmi_data(input_file, output_dir):
             subject_df1 = subject_df
         
         df_new = pd.concat([df_new, subject_df1], axis=0)
-    
-    # Ensure only positive days are included
-    df_new = df_new[df_new['daysrz'] >= 0].reset_index(drop=True)
-    
-    return df_new
+    logger.info("Event assignment complete: resulting rows = %d", df_new.shape[0])
 
-def process_bmi_data(input_file, output_file):
+    # Ensure only the first event occurrence is kept per subject
+    logger.info("Filtering for first event occurrence per subject...")
+    df_final = pd.DataFrame([], columns=df_new.columns)
+    for idx,s in enumerate(tqdm(list(set(df_new['subjectkey'])))):
+        df_temp = df_new[df_new['subjectkey']==s]
+        first_one_index = df_temp.drop(df_temp[df_temp['event_occurs'].eq(1)].index[1:])
+        df_final = pd.concat([df_final,first_one_index],axis=0)
+    # Final event occurrence file in need to for plotting and Cox regression
+    out_path = os.path.join(output_dir, 'stepBD_bmi_final_event_occurrence.csv')
+    df_final.to_csv(out_path, index=False)
+    logger.info("Final entries saved to %s (%d rows)", out_path, df_final.shape[0])
+    return out_path, df_final
+
+
+def process_stepbd_bmi_data(input_file, baseline_file, output_dir, madrs_file, ymrs_file):
     """
     Process and save BMI data for survival analysis.
     
@@ -189,11 +195,10 @@ def process_bmi_data(input_file, output_file):
     output_file (str): Path to save the processed data.
     """
     # Process the data
-    df_processed = preprocess_bmi_data(input_file, output_dir=os.path.dirname(output_file))
+    out_path, df_processed = preprocess_stepbd_bmi_data(input_file, baseline_file, output_dir, madrs_file, ymrs_file)
     
     # Save the processed data
-    df_processed.to_csv(output_file, index=False)
-    print(f"Processed BMI data saved to {output_file}")
+    print(f"Processed smoking data saved to {out_path}")
     
     # Print basic statistics
     print("\nData Processing Statistics:")
@@ -209,10 +214,13 @@ def main():
     """
     # Paths - replace these with your actual paths
     input_file = '../STEP_BD_pipelined/step_bd_final_data_debugged_dedupe_new_vars_med_bin_derived_complete.csv'
-    output_file = '../data4survivals/stepBD_2missing_bmi_w_impute.csv'
+    baseline_file = '../STEP_BD_pipelined/ade01.txt'
+    output_dir = '../data4survivals_1/'
+    madrs_file  = '../STEP-BD data/Text files from NDA/madrs01.txt'
+    ymrs_file  = '../STEP-BD data/Text files from NDA/ymrs01.txt'
     
     # Process the data
-    process_bmi_data(input_file, output_file)
+    process_stepbd_bmi_data(input_file, baseline_file, output_dir, madrs_file, ymrs_file)
 
 if __name__ == "__main__":
     main()

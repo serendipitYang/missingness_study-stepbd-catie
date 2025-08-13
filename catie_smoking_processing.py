@@ -1,139 +1,139 @@
 import os
+import logging
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from collections import Counter
+import warnings
 
-from catie_processing_utils import (
+# Import utility functions from local utils.py
+from utils import (
     locf_imputation, 
-    compute_schedule_visit, 
-    map_clinstat,
-    get_visit_id,
+    panss_cols,
+    clgry_cols,
+    cig_cols,
+    map_clinstat_panss_or_calg,
+    get_visit_id_catie, # Different ID system of CATIE from StepBD
     find_missing_required_visits
 )
 
-def preprocess_catie_smoking_data(input_file, output_dir):
+# ------------------------------------------------------------------------------
+# Configure logger and disable warnings
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s:%(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
+
+warnings.filterwarnings('ignore')
+# ------------------------------------------------------------------------------
+
+def preprocess_catie_smoking_data(input_file, output_dir, demo_file, panss_file, clgry_file, cig_file):
     """
     Preprocess CATIE smoking data.
     
     Parameters:
     input_file (str): Path to the input CSV file.
     output_dir (str): Directory to save processed data.
-    
+    demo_file (str): Path to the demographics data file.
+    panss_file (str): Path to the PANSS data file.
+    clgry_file (str): Path to the Calgary data file.
+    cig_file (str): Path to the cigarettes data file.
+
     Returns:
     DataFrame: Processed smoking data.
     """
     # Read visit data
+    logger.info("Reading visit data...")
     df_all = pd.read_csv(input_file, skiprows=1, names=[
         'CATIEID', 'subjectkey', 'gender', 'visit', 'visitid', 'TRUNCVIS',
         'PHASE', 'MISSED', 'ATTENDED', 'DISCON', 'VISDAY'
     ])
 
-    # Read essential datasets
-    df_vitals = pd.read_csv(os.path.join(os.path.dirname(input_file), 'vitals01.txt'), delimiter="\t")
-    df_panss = pd.read_csv(os.path.join(os.path.dirname(input_file), 'panss01.txt'), 
-                            skiprows=2, 
-                            delimiter="\t",
-                            names=[
-                                'collection_id', 'panss01_id', 'dataset_id', 
-                                'subjectkey', 'visitid', 'visit', 
-                                'panss_total', 'panss_positive', 'panss_negative'
-                            ])
-    df_clgry = pd.read_csv(os.path.join(os.path.dirname(input_file), 'clgry01.txt'), 
-                            skiprows=2, 
-                            delimiter="\t",
-                            names=[
-                                'collection_id', 'clgry01_id', 'dataset_id', 
-                                'subjectkey', 'visitid', 'visit', 
-                                'calg_ts'
-                            ])
-    df_cig = pd.read_csv(os.path.join(os.path.dirname(input_file), 'cgis01.txt'), 
-                         skiprows=2, 
-                         delimiter="\t",
-                         names=[
-                             'collection_id', 'cgis01_id', 'dataset_id', 
-                             'subjectkey', 'visitid', 'visit', 
-                             'cs06', 'cscigs'
-                         ])
+    # Read essential datasets, with selected columns
+    df_panss = pd.read_csv(panss_file, skiprows=2, delimiter="\t", names=panss_cols)
+    df_clgry = pd.read_csv(clgry_file, skiprows=2, delimiter="\t", names=clgry_cols)
+    df_cig = pd.read_csv(cig_file, skiprows=2, delimiter="\t", names=cig_cols)
 
     # Prepare data for merging
-    convert_columns = ['visitid', 'subjectkey']
-    for df in [df_all, df_vitals, df_panss, df_clgry, df_cig]:
+    convert_columns = ['subjectkey', 'visit', 'visitid']
+    for df in [df_all, df_panss, df_clgry, df_cig]:
         for col in convert_columns:
             df[col] = df[col].astype('str')
 
-    # Merge datasets
-    df_smoking = df_all.merge(df_panss[['subjectkey', 'visit', 'visitid', 
-                                         'panss_total', 'panss_positive', 'panss_negative']], 
-                               on=['subjectkey', 'visit', 'visitid'], how='left')
-    df_smoking = df_smoking.merge(df_clgry[['subjectkey', 'visit', 'visitid', 'calg_ts']], 
-                                   on=['subjectkey', 'visit', 'visitid'], how='left')
-    df_smoking = df_smoking.merge(df_cig[['subjectkey', 'visit', 'visitid', 'cs06', 'cscigs']], 
-                                   on=['subjectkey', 'visit', 'visitid'], how='left')
-
+    # Merge datasets, merge on subjectkey, visit, and visitid as join keys
+    logger.info("Merging datasets...")
+    df_all_1 = df_all.merge(df_panss[['subjectkey', 'visit', 'visitid',
+            'panss_general', 'panss_negative','panss_positive', 'panss_total']], 
+                                        on=['subjectkey', 'visit', 'visitid'], how='left')
+    df_all_2 = df_all_1.merge(df_clgry[['subjectkey', 'visit', 'visitid',
+            'calg_ts']], on=['subjectkey', 'visit', 'visitid'], how='left')
+    df_all_3 = df_all_2.merge(df_cig[['subjectkey', 'visit', 'visitid',
+            'cs06', 'cscigs']], on=['subjectkey', 'visit', 'visitid'], how='left')
     # Rename columns
-    df_smoking.rename(columns={
+    logger.info("Renaming columns...")
+    df_smoking=df_all_3.rename(columns={
         'VISDAY': 'daysrz',
         'cs06': 'smoker_yn',
         'cscigs': 'cigarettes_past_7_days'
-    }, inplace=True)
-
+    })
+    
     # Clinical status determination
-    df_smoking['clinstat_pt'] = map_clinstat(df_smoking, is_panss=True)
-    df_smoking['clinstat_cg'] = map_clinstat(df_smoking, is_panss=False)
-    df_smoking['clinstat'] = map_clinstat(df_smoking, is_panss=None)
-
+    logger.info("Determining clinical status by PANSS or Calgary score...")
+    df_smoking['clinstat_pt'] = map_clinstat_panss_or_calg(df_smoking, is_panss=True)
+    df_smoking['clinstat_cg'] = map_clinstat_panss_or_calg(df_smoking, is_panss=False)
+    df_smoking['clinstat_ptORcg'] = map_clinstat_panss_or_calg(df_smoking, is_panss=None)
     # Impute clinical status
+    logger.info("Imputing clinical status...")
+    df_smoking['clinstat'] = df_smoking['clinstat_ptORcg'].copy()
     columns_to_impute = ['clinstat']
-    df_smoking_imputed = locf_imputation(df_smoking, columns_to_impute)
-    df_smoking_imputed.dropna(subset=['clinstat'], inplace=True)
-    df_smoking_imputed['clinstat_1'] = df_smoking_imputed['clinstat'].astype('int')
+    df_smoking_imputed= locf_imputation(df_smoking, columns_to_impute)
+    df_smoking_2 = df_smoking_imputed.dropna(subset=['clinstat'])
+    df_smoking_2['clinstat_1'] = df_smoking_2['clinstat'].astype('int')
 
-    # Impute smoker status
-    columns_to_impute = ['smoker_yn']
-    df_smoking_imputed = locf_imputation(df_smoking_imputed, columns_to_impute)
-    df_smoking_imputed.dropna(subset=['smoker_yn'], inplace=True)
-    df_smoking_imputed['smoker_yn'] = df_smoking_imputed['smoker_yn'].astype('int')
-
-    # Categorize smokers
-    smokers, non_smokers, changers = [], [], []
-    for k in tqdm(list(set(df_smoking_imputed['subjectkey']))):
-        smkstatus = list(df_smoking_imputed[df_smoking_imputed['subjectkey']==k]['smoker_yn'])
-        all_smk_status = [int(s) for s in list(set(smkstatus))]
-        
-        if len(set(smkstatus)) != 1:
-            changers.append(k)
-            continue
-        
-        if all_smk_status[0] == 0:
-            non_smokers.append(k)
-        elif all_smk_status[0] == 1:
-            smokers.append(k)
+    # Determine smoking status by Screening or Baseline visit
+    logger.info("Determining smoking status by Screening or Baseline visit...")
+    smokers = []
+    for idx_sk,sk in enumerate(tqdm(set(df_smoking_2['subjectkey']))):
+        df_temp = df_smoking_2[(df_smoking_2['subjectkey']==sk) & (df_smoking_2['visit'].isin(['Screening','Baseline']))]
+        if 1.0 in list(df_temp['smoker_yn']):
+            smokers.append(sk)
+    non_smokers = []
+    for idx_sk,sk in enumerate(tqdm(set(df_smoking_2['subjectkey']))):
+        df_temp = df_smoking_2[(df_smoking_2['subjectkey']==sk) & (df_smoking_2['visit'].isin(['Screening','Baseline']))]
+        if 0.0 in list(df_temp['smoker_yn']):
+            non_smokers.append(sk)
+    missing_baseliners = list(set(df_smoking_2[(~df_smoking_2['subjectkey'].isin(list(set(smokers) | set(non_smokers)))) & (df_smoking_2['visit'].isin(['Screening','Baseline']))]['subjectkey']))
+    logger.info(
+        "Baseline classification: %d smokers, %d non-smokers, %d missing",
+        len(smokers), len(non_smokers), len(missing_baseliners)
+    )
 
     # Mark smoking status
-    smoking_status = [''] * len(df_smoking_imputed)
-    for idx, sk in enumerate(df_smoking_imputed['subjectkey']):
+    smoking_status = [''] * len(df_smoking_2)
+    for idx, sk in enumerate(df_smoking_2['subjectkey']):
         if sk in smokers:
             smoking_status[idx] = 'smoker'
-        if sk in non_smokers:
+        elif sk in non_smokers:
             smoking_status[idx] = 'non-smoker'
-        if sk in changers:
-            smoking_status[idx] = 'changer'
-    df_smoking_imputed['smoker_yn_1'] = smoking_status
+        else:
+            smoking_status[idx] = 'missing_baseliner'
+    df_smoking_2['smoker_yn_1'] = smoking_status
 
     # Prepare for survival analysis
-    df_smoking_filtered = df_smoking_imputed[
-        df_smoking_imputed['visit'].str.match(r'^(Visit\d+|Baseline|Screening)$', na=False)
+    df_smoking_filtered = df_smoking_2[
+        df_smoking_2['visit'].str.match(r'^(Visit\d+|Baseline|Screening)$', na=False)
     ]
 
     # Prepare final dataset for survival analysis
+    logger.info("Computing event occurrences for %d subjects...", len(set(df_smoking_filtered['subjectkey'])))
     df_new = pd.DataFrame([], columns=list(df_smoking_filtered.columns)+['visit_id', 'event_occurs'])
     for idx, subject in enumerate(tqdm(list(set(df_smoking_filtered['subjectkey'])))):
         subject_df = df_smoking_filtered[df_smoking_filtered['subjectkey'] == subject]
-        visit_list = get_visit_id(list(subject_df['visit']))
+        visit_list = get_visit_id_catie(list(subject_df['visit']))
         subject_df['visit_id'] = visit_list
         target_missing, subject_df['event_occurs'] = find_missing_required_visits(visit_list)
-        
         # Keep only the first event occurrence row
         if 1 in subject_df['event_occurs']:
             subject_df1 = pd.concat([
@@ -142,29 +142,40 @@ def preprocess_catie_smoking_data(input_file, output_dir):
             ], axis=0)
         else:
             subject_df1 = subject_df
-        
         df_new = pd.concat([df_new, subject_df1], axis=0)
 
     # Ensure only positive days are included
     df_new = df_new[df_new['daysrz'] >= 0].reset_index(drop=True)
 
-    return df_new
+    logger.info("Filtering for first event occurrence per subject...")
+    df_final = pd.DataFrame([], columns=df_new.columns)
+    for idx,s in enumerate(tqdm(list(set(df_new['subjectkey'])))):
+        df_temp = df_new[df_new['subjectkey']==s]
+        first_one_index = df_temp.drop(df_temp[df_temp['event_occurs'].eq(1)].index[1:])
+        df_final = pd.concat([df_final,first_one_index],axis=0)
 
-def process_catie_smoking_data(input_file, output_file, missing_visits=2):
+    out_path = os.path.join(output_dir, 'CATIE_smoking_final_event_occurrence.csv')
+    df_final.to_csv(out_path, index=False)
+    logger.info("Final entries saved to %s (%d rows)", out_path, df_final.shape[0])
+    return out_path, df_final
+
+def process_catie_smoking_data(input_file, output_dir, demo_file, panss_file, clgry_file, cig_file):
     """
     Process and save CATIE smoking data for survival analysis.
     
     Parameters:
     input_file (str): Path to the input CSV file.
-    output_file (str): Path to save the processed data.
-    missing_visits (int): Number of missing visits to define dropout.
+    output_dir (str): Path to save the processed data file.
+    demo_file (str): Path to the demographics data file.
+    panss_file (str): Path to the PANSS data file.
+    clgry_file (str): Path to the Calgary data file.
+    cig_file (str): Path to the cigarettes data file.    
     """
     # Process the data
-    df_processed = preprocess_catie_smoking_data(input_file, output_dir=os.path.dirname(output_file))
+    out_path, df_processed = preprocess_catie_smoking_data(input_file, output_dir, demo_file, panss_file, clgry_file, cig_file)
     
     # Save the processed data
-    df_processed.to_csv(output_file, index=False)
-    print(f"Processed CATIE smoking data saved to {output_file}")
+    print(f"Processed CATIE smoking data saved to {out_path}")
     
     # Print basic statistics
     print("\nData Processing Statistics:")
@@ -180,10 +191,14 @@ def main():
     """
     # Paths - replace these with your actual paths
     input_file = '../CATIE/CATIE data from NIH NDA/VISIT.csv'
-    output_file = '../data4survivals/CATIE_2missing_smoking_ptORcg_imputed.csv'
+    demo_file = '../CATIE/CATIE data from NIH NDA/demo01.txt'
+    panss_file = '../CATIE/CATIE data from NIH NDA/panss01.txt'
+    clgry_file = '../CATIE/CATIE data from NIH NDA/clgry01.txt'
+    cig_file = '../CATIE/CATIE data from NIH NDA/cgis01.txt'
+    output_dir = '../data4survivals_1/'
     
     # Process the data
-    process_catie_smoking_data(input_file, output_file)
+    process_catie_smoking_data(input_file, output_dir, demo_file, panss_file, clgry_file, cig_file)
 
 if __name__ == "__main__":
     main()
