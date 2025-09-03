@@ -274,8 +274,8 @@ def GetSMK(smoker_yn_1):
         return 2
     if smoker_yn_1=='changer':
         return 1
-    else:
-        return 2
+    else: # missing-baseliners
+        return -999
 
 def GetClinstat2(clinstat_1):
     if clinstat_1==0:
