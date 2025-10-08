@@ -38,8 +38,8 @@ The analysis investigates whether missing visits in these studies are associated
 ### Statistical Analysis
 - **Kaplan-Meier survival curves** stratified by risk factors and clinical severity
 - **Cox proportional hazards regression** with pairwise comparisons
-- **False Discovery Rate (FDR) correction** for multiple comparisons
-- **Weighted analysis** to account for repeated measures per participant
+- **False Discovery Rate (FDR) correction** for multiple comparisons, Benjamini-Hochberg (BH) procedure
+- **Weighted analysis** to make sure each participant equally contribute to the model as long as it is included
 
 ### Visualization
 - Publication-ready Kaplan-Meier plots comparing survival curves across groups
